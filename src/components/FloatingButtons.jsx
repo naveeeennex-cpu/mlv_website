@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { FaWhatsapp } from 'react-icons/fa';
 
 const WHATSAPP_URL =
-  'https://wa.me/919999999999?text=I%20want%20to%20book%20a%20smart%20lock';
+  'https://wa.me/919176186062?text=I%20want%20to%20book%20a%20smart%20lock';
 
 export default function FloatingButtons() {
   return (
