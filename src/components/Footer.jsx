@@ -2,7 +2,7 @@ import { FaWhatsapp, FaInstagram } from 'react-icons/fa';
 import { FiMapPin, FiPhone, FiMail } from 'react-icons/fi';
 
 const WHATSAPP_URL =
-  'https://wa.me/919999999999?text=I%20want%20to%20book%20a%20smart%20lock';
+  'https://wa.me/919176186062?text=I%20want%20to%20book%20a%20smart%20lock';
 const INSTAGRAM_URL = 'https://www.instagram.com/mlv_smartlockexperts?igsh=MXNtMGllcGQyNjI0Yg==';
 
 const QUICK_LINKS = [
@@ -75,7 +75,7 @@ export default function Footer() {
             <ul className="space-y-4">
               <li className="flex items-start gap-3">
                 <FiPhone size={14} className="text-white/40 mt-0.5 shrink-0" />
-                <span className="text-white/40 text-sm">+91 99999 99999</span>
+                <span className="text-white/40 text-sm">+91 91761 86062</span>
               </li>
               <li className="flex items-start gap-3">
                 <FiMail size={14} className="text-white/40 mt-0.5 shrink-0" />
