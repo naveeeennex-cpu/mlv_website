@@ -42,11 +42,12 @@ export async function handleMessage(message, client) {
         if (aiAnalysis) {
           // Check if AI detected a service issue
           if (aiAnalysis.trim().startsWith('SERVICE:')) {
-            const issue = aiAnalysis.replace('SERVICE:', '').trim();
+            const aiMessage = aiAnalysis.replace('SERVICE:', '').trim();
+            const shortIssue = caption || 'Customer shared image of issue';
             session.state = 'service_name';
-            session.data = { issue, hasImage: true, imageId };
+            session.data = { issue: shortIssue, hasImage: true, imageId };
             await sendText(phoneNumberId, accessToken, from,
-              `${issue}\n\nLet me help you raise a service request. 📝\n\nPlease share your *full name*:`);
+              `${aiMessage}\n\nLet me help you raise a service request. 📝\n\nPlease share your *full name*:`);
             return;
           }
           await sendText(phoneNumberId, accessToken, from, aiAnalysis);
@@ -297,11 +298,13 @@ export async function handleMessage(message, client) {
 
     // AI detected service/complaint intent
     if (aiReply.trim().startsWith('SERVICE:')) {
-      const issue = aiReply.replace('SERVICE:', '').trim();
+      const aiMessage = aiReply.replace('SERVICE:', '').trim();
+      // Store original user query as the short issue, AI message is for display
+      const shortIssue = text.length <= 200 ? text : text.substring(0, 200);
       session.state = 'service_name';
-      session.data = { issue };
+      session.data = { issue: shortIssue };
       await sendText(phoneNumberId, accessToken, from,
-        `${issue}\n\nLet me raise a service request. 📝\n\nPlease share your *full name*:`);
+        `${aiMessage}\n\nLet me raise a service request for you. 📝\n\nPlease share your *full name*:`);
       return;
     }
 
