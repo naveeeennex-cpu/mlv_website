@@ -20,9 +20,12 @@ export default function Footer() {
       <div className="max-w-6xl mx-auto px-6 lg:px-10 py-16 lg:py-20">
         <div className="grid md:grid-cols-3 gap-12 lg:gap-16">
           <div className="space-y-5">
-            <h3 className="text-2xl font-bold text-white tracking-tight">
-              MLV Enterprises
-            </h3>
+            <div className="flex items-center gap-3">
+              <img src="/logo.png" alt="MLV Enterprises" className="h-12 w-auto" />
+              <h3 className="text-2xl font-bold text-white tracking-tight">
+                MLV Enterprises
+              </h3>
+            </div>
             <p className="text-white/40 text-sm leading-relaxed max-w-xs">
               MLV Enterprises is a smart lock company based in Chennai. We focus on
               developing and installing innovative smart lock products for homes
