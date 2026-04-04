@@ -120,12 +120,29 @@ export async function handleMessage(message, client) {
     return;
   }
 
-  // Check if it's a category number (for category browsing)
-  const catIndex = parseInt(lower) - 1;
-  if (!isNaN(catIndex) && catIndex >= 0 && catIndex < client.products.length && session.state === 'idle') {
-    // Could be a category selection if they were browsing
-    await sendCategoryProducts(phoneNumberId, accessToken, from, client, catIndex);
-    return;
+  // Handle number input based on current state
+  const num = parseInt(lower);
+  if (!isNaN(num) && num >= 1) {
+    // If user was browsing a category, pick product by number
+    if (session.state === 'browsing_category' && session.currentCategory != null) {
+      const category = client.products[session.currentCategory];
+      const productIndex = num - 1;
+      if (category && productIndex >= 0 && productIndex < category.products.length) {
+        const product = category.products[productIndex];
+        session.lastProduct = product.name;
+        session.state = 'idle';
+        await sendProductDetails(phoneNumberId, accessToken, from, product, client);
+        return;
+      }
+    }
+    // Otherwise treat as category selection
+    const catIndex = num - 1;
+    if (catIndex >= 0 && catIndex < client.products.length) {
+      session.state = 'browsing_category';
+      session.currentCategory = catIndex;
+      await sendCategoryProducts(phoneNumberId, accessToken, from, client, catIndex);
+      return;
+    }
   }
 
   // Search for product by name
@@ -204,7 +221,7 @@ async function sendCategoryProducts(phoneNumberId, accessToken, to, client, catI
     msg += `\n_...and ${category.products.length - 10} more_\n`;
   }
 
-  msg += `\n_Type a product name to see full details._`;
+  msg += `\n_Reply with a number or product name to see details._`;
   await sendText(phoneNumberId, accessToken, to, msg);
 }
 

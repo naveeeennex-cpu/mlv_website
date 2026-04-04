@@ -8,6 +8,6 @@ export const mlvConfig = {
   accessToken: process.env.MLV_WA_TOKEN,
   businessName: 'MLV Enterprises',
   ownerPhone: '919176186062',
-  websiteUrl: 'https://mlv-website.vercel.app',
+  websiteUrl: 'https://www.mlventerprises.in',
   products: PRODUCT_CATEGORIES,
 };
