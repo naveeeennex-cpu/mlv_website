@@ -80,6 +80,27 @@ export async function sendInteractiveButtons(phoneNumberId, accessToken, to, { b
   return res;
 }
 
+export async function sendImage(phoneNumberId, accessToken, to, imageId, caption) {
+  const res = await fetch(`${GRAPH_API}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'image',
+      image: { id: imageId, caption: caption || '' },
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('WhatsApp image send error:', err);
+  }
+  return res;
+}
+
 export async function markAsRead(phoneNumberId, accessToken, messageId) {
   await fetch(`${GRAPH_API}/${phoneNumberId}/messages`, {
     method: 'POST',

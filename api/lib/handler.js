@@ -1,5 +1,5 @@
-import { sendText, sendInteractiveButtons, markAsRead } from './whatsapp.js';
-import { askAI } from './ai.js';
+import { sendText, sendInteractiveButtons, sendImage, markAsRead } from './whatsapp.js';
+import { askAI, analyzeImage } from './ai.js';
 
 // In-memory session store (resets on cold start — fine for stateless flows)
 const sessions = new Map();
@@ -21,6 +21,45 @@ export async function handleMessage(message, client) {
   // Mark as read
   markAsRead(phoneNumberId, accessToken, msgId);
 
+  // Handle image messages
+  if (message.type === 'image') {
+    const imageId = message.image.id;
+    const caption = message.image.caption || '';
+    const session = getSession(from);
+
+    // If in complaint flow and waiting for image, attach it
+    if (session.state === 'complaint_details') {
+      session.data.hasImage = true;
+      session.data.imageId = imageId;
+    }
+
+    // Download image and analyze with Gemini
+    const imageUrl = await getMediaUrl(imageId, accessToken);
+    if (imageUrl) {
+      const imageData = await downloadMedia(imageUrl, accessToken);
+      if (imageData) {
+        const aiAnalysis = await analyzeImage(imageData.buffer, imageData.mimeType, caption, client);
+        if (aiAnalysis) {
+          // Check if AI detected a service issue
+          if (aiAnalysis.trim().startsWith('SERVICE:')) {
+            const issue = aiAnalysis.replace('SERVICE:', '').trim();
+            session.state = 'service_name';
+            session.data = { issue, hasImage: true, imageId };
+            await sendText(phoneNumberId, accessToken, from,
+              `${issue}\n\nLet me help you raise a service request. 📝\n\nPlease share your *full name*:`);
+            return;
+          }
+          await sendText(phoneNumberId, accessToken, from, aiAnalysis);
+          return;
+        }
+      }
+    }
+
+    await sendText(phoneNumberId, accessToken, from,
+      `Thanks for sharing the image! Could you also describe the issue in text so I can assist you better?`);
+    return;
+  }
+
   // Extract text
   let text = '';
   if (message.type === 'text') {
@@ -33,50 +72,122 @@ export async function handleMessage(message, client) {
     }
   } else {
     await sendText(phoneNumberId, accessToken, from,
-      `Thanks for your message! I can help you best with text messages. Please type your query or say "hi" to see the menu.`);
+      `Thanks for your message! I can help you with text messages and images. Please type your query or say "hi" to see the menu.`);
     return;
   }
 
   const lower = text.toLowerCase();
   const session = getSession(from);
 
-  // Handle booking flow
+  // ── BOOKING FLOW ──
   if (session.state === 'booking_name') {
     session.data.name = text;
+    session.state = 'booking_phone';
+    await sendText(phoneNumberId, accessToken, from, `Thanks ${text}! 📱 Please share your *phone number*:`);
+    return;
+  }
+  if (session.state === 'booking_phone') {
+    session.data.phone = text;
     session.state = 'booking_location';
-    await sendText(phoneNumberId, accessToken, from, `Thanks ${text}! 📍 Please share your *location/city*:`);
+    await sendText(phoneNumberId, accessToken, from, `Got it! 📍 Please share your *location/city*:`);
     return;
   }
   if (session.state === 'booking_location') {
     session.data.location = text;
     session.state = 'booking_date';
-    await sendText(phoneNumberId, accessToken, from, `Got it! 📅 When would you prefer the installation? (e.g., "Next Monday", "15 April")`);
+    await sendText(phoneNumberId, accessToken, from, `📅 When would you prefer? (e.g., "Next Monday", "15 April")`);
     return;
   }
   if (session.state === 'booking_date') {
     session.data.date = text;
     session.state = 'idle';
 
-    const productInfo = session.data.product ? ` for *${session.data.product}*` : '';
-    const summary = `✅ *Booking Request Received!*\n\n` +
+    const productInfo = session.data.product ? `\nProduct: ${session.data.product}` : '';
+    const summary = `✅ *Booking Confirmed!*\n\n` +
       `Name: ${session.data.name}\n` +
+      `Phone: ${session.data.phone}\n` +
       `Location: ${session.data.location}\n` +
       `Preferred Date: ${session.data.date}${productInfo}\n\n` +
-      `Our team will contact you shortly. You can also call us at +${client.ownerPhone}`;
+      `Our team will contact you shortly to confirm. You can also reach us at +${client.ownerPhone}`;
 
     await sendText(phoneNumberId, accessToken, from, summary);
 
     // Notify business owner
     if (client.ownerPhone) {
       const ownerMsg = `🔔 *New Booking Request*\n\n` +
-        `From: ${from}\n` +
+        `From: wa.me/${from}\n` +
         `Name: ${session.data.name}\n` +
+        `Phone: ${session.data.phone}\n` +
         `Location: ${session.data.location}\n` +
         `Date: ${session.data.date}${productInfo}`;
       await sendText(phoneNumberId, accessToken, client.ownerPhone, ownerMsg);
     }
 
     session.data = {};
+    return;
+  }
+
+  // ── SERVICE / COMPLAINT FLOW ──
+  if (session.state === 'service_name') {
+    session.data.name = text;
+    session.state = 'service_phone';
+    await sendText(phoneNumberId, accessToken, from, `Thanks ${text}! 📱 Please share your *phone number*:`);
+    return;
+  }
+  if (session.state === 'service_phone') {
+    session.data.phone = text;
+    session.state = 'service_location';
+    await sendText(phoneNumberId, accessToken, from, `Got it! 📍 Please share your *location/city*:`);
+    return;
+  }
+  if (session.state === 'service_location') {
+    session.data.location = text;
+    session.state = 'service_date';
+    await sendText(phoneNumberId, accessToken, from, `📅 When would be a good time for our technician to visit? (e.g., "Tomorrow 10AM", "Next Monday")`);
+    return;
+  }
+  if (session.state === 'service_date') {
+    session.data.date = text;
+    session.state = 'idle';
+
+    const issue = session.data.issue || 'Not specified';
+    const hasImage = session.data.hasImage ? '\n📷 Image attached' : '';
+    const summary = `✅ *Service Request Registered!*\n\n` +
+      `Name: ${session.data.name}\n` +
+      `Phone: ${session.data.phone}\n` +
+      `Location: ${session.data.location}\n` +
+      `Preferred Date: ${session.data.date}\n` +
+      `Issue: ${issue}${hasImage}\n\n` +
+      `Our technician will contact you to confirm the visit. For urgent help, call +${client.ownerPhone}`;
+
+    await sendText(phoneNumberId, accessToken, from, summary);
+
+    // Notify business owner
+    if (client.ownerPhone) {
+      const ownerMsg = `🚨 *New Service/Complaint Request*\n\n` +
+        `From: wa.me/${from}\n` +
+        `Name: ${session.data.name}\n` +
+        `Phone: ${session.data.phone}\n` +
+        `Location: ${session.data.location}\n` +
+        `Date: ${session.data.date}\n` +
+        `Issue: ${issue}${hasImage}`;
+      await sendText(phoneNumberId, accessToken, client.ownerPhone, ownerMsg);
+
+      // Forward customer's image to owner
+      if (session.data.hasImage && session.data.imageId) {
+        await sendImage(phoneNumberId, accessToken, client.ownerPhone, session.data.imageId,
+          `📷 Image from ${session.data.name} (${session.data.phone}) - ${issue}`);
+      }
+    }
+
+    session.data = {};
+    return;
+  }
+  if (session.state === 'complaint_details') {
+    session.data.issue = text;
+    session.state = 'service_name';
+    await sendText(phoneNumberId, accessToken, from,
+      `I understand the issue. Let me raise a service request for you. 📝\n\nPlease share your *full name*:`);
     return;
   }
 
@@ -88,7 +199,7 @@ export async function handleMessage(message, client) {
     return;
   }
 
-  // Main menu options
+  // ── MAIN MENU OPTIONS ──
   if (lower === '1' || lower === 'products' || lower === 'browse' || lower === 'btn_products') {
     await sendCategories(phoneNumberId, accessToken, from, client);
     return;
@@ -111,6 +222,17 @@ export async function handleMessage(message, client) {
     return;
   }
 
+  // Service / complaint triggers
+  if (lower === '4' || lower === 'service' || lower === 'complaint' || lower === 'repair' ||
+      lower === 'issue' || lower === 'problem' || lower === 'broken' || lower === 'not working' ||
+      lower === 'btn_service') {
+    session.state = 'complaint_details';
+    session.data = {};
+    await sendText(phoneNumberId, accessToken, from,
+      `🔧 *Service & Support*\n\nPlease describe your issue in detail (e.g., "lock not responding", "fingerprint not working", "battery issue").\n\nYou can also share a *photo* of the problem.`);
+    return;
+  }
+
   // Order / enquire / confirm interest about last viewed product
   const orderTriggers = ['order', 'enquire', 'buy', 'btn_order', 'okay', 'ok', 'yes', 'yeah',
     'interested', 'i want', 'i need', 'book it', 'go ahead', 'proceed', 'sure'];
@@ -122,10 +244,9 @@ export async function handleMessage(message, client) {
     return;
   }
 
-  // Handle number input based on current state
+  // ── NUMBER INPUT ──
   const num = parseInt(lower);
   if (!isNaN(num) && num >= 1) {
-    // If user was browsing a category, pick product by number
     if (session.state === 'browsing_category' && session.currentCategory != null) {
       const category = client.products[session.currentCategory];
       const productIndex = num - 1;
@@ -137,7 +258,6 @@ export async function handleMessage(message, client) {
         return;
       }
     }
-    // Otherwise treat as category selection
     const catIndex = num - 1;
     if (catIndex >= 0 && catIndex < client.products.length) {
       session.state = 'browsing_category';
@@ -147,7 +267,7 @@ export async function handleMessage(message, client) {
     }
   }
 
-  // Search for product by name
+  // ── PRODUCT / CATEGORY SEARCH ──
   const product = findProduct(lower, client.products);
   if (product) {
     session.lastProduct = product.name;
@@ -155,7 +275,6 @@ export async function handleMessage(message, client) {
     return;
   }
 
-  // Search for category by name
   const category = findCategory(lower, client.products);
   if (category) {
     const catIdx = client.products.indexOf(category);
@@ -163,16 +282,26 @@ export async function handleMessage(message, client) {
     return;
   }
 
-  // Try AI for complex queries
+  // ── AI FOR COMPLEX QUERIES ──
   const aiReply = await askAI(text, client);
   if (aiReply) {
-    // Check if AI detected a booking intent
+    // AI detected booking intent
     if (aiReply.trim().startsWith('BOOKING:')) {
       const productName = aiReply.trim().replace('BOOKING:', '').trim();
       session.state = 'booking_name';
       session.data = { product: productName };
       await sendText(phoneNumberId, accessToken, from,
         `Great choice! Let's get your order for *${productName}* started. 📝\n\nPlease share your *full name*:`);
+      return;
+    }
+
+    // AI detected service/complaint intent
+    if (aiReply.trim().startsWith('SERVICE:')) {
+      const issue = aiReply.replace('SERVICE:', '').trim();
+      session.state = 'service_name';
+      session.data = { issue };
+      await sendText(phoneNumberId, accessToken, from,
+        `${issue}\n\nLet me raise a service request. 📝\n\nPlease share your *full name*:`);
       return;
     }
 
@@ -191,22 +320,25 @@ export async function handleMessage(message, client) {
     return;
   }
 
-  // Fallback
+  // ── FALLBACK ──
   await sendText(phoneNumberId, accessToken, from,
     `I'm not sure I understood that. Here's what I can help with:\n\n` +
     `1️⃣ *Products* - Browse our catalog\n` +
     `2️⃣ *Book* - Schedule an installation\n` +
-    `3️⃣ *Contact* - Talk to our team\n\n` +
+    `3️⃣ *Contact* - Talk to our team\n` +
+    `4️⃣ *Service* - Report an issue or complaint\n\n` +
     `Or just ask any question about Yale smart locks!`);
 }
 
+// ── GREETING ──
 async function sendGreeting(phoneNumberId, accessToken, to, client) {
   const greeting = `👋 *Welcome to ${client.businessName}!*\n` +
     `Your trusted Yale Smart Lock experts.\n\n` +
     `How can I help you today?\n\n` +
     `1️⃣ Browse Products\n` +
     `2️⃣ Book Installation\n` +
-    `3️⃣ Talk to Us\n\n` +
+    `3️⃣ Talk to Us\n` +
+    `4️⃣ Service & Support\n\n` +
     `_Or just type your question about any Yale product!_`;
 
   await sendInteractiveButtons(phoneNumberId, accessToken, to, {
@@ -214,11 +346,12 @@ async function sendGreeting(phoneNumberId, accessToken, to, client) {
     buttons: [
       { id: 'btn_products', title: 'Browse Products' },
       { id: 'btn_book', title: 'Book Installation' },
-      { id: 'btn_contact', title: 'Contact Us' },
+      { id: 'btn_service', title: 'Service & Support' },
     ],
   });
 }
 
+// ── CATEGORIES ──
 async function sendCategories(phoneNumberId, accessToken, to, client) {
   let msg = `📦 *Product Categories*\n\n`;
   client.products.forEach((cat, i) => {
@@ -234,7 +367,6 @@ async function sendCategoryProducts(phoneNumberId, accessToken, to, client, catI
 
   let msg = `📋 *${category.name}*\n${category.description}\n\n`;
 
-  // Show up to 10 products
   const products = category.products.slice(0, 10);
   products.forEach((p, i) => {
     msg += `${i + 1}. *${p.name}* — ${p.mrp}\n`;
@@ -248,6 +380,7 @@ async function sendCategoryProducts(phoneNumberId, accessToken, to, client, catI
   await sendText(phoneNumberId, accessToken, to, msg);
 }
 
+// ── PRODUCT DETAILS ──
 async function sendProductDetails(phoneNumberId, accessToken, to, product, client) {
   let msg = `🔐 *${product.name}*\n`;
   if (product.code && product.code !== product.name) {
@@ -290,6 +423,7 @@ async function sendProductDetails(phoneNumberId, accessToken, to, product, clien
   });
 }
 
+// ── HELPERS ──
 function findProduct(query, categories) {
   const q = query.toLowerCase().replace(/[^a-z0-9\s]/g, '');
   for (const cat of categories) {
@@ -307,22 +441,47 @@ function findProduct(query, categories) {
 function findCategory(query, categories) {
   const q = query.toLowerCase().trim();
 
-  // Skip if it looks like a question (contains question words or "?")
   if (/\?|which|what|how|best|recommend|suggest|can|does|should|tell me/i.test(q)) {
     return null;
   }
 
-  // Only match short, direct inputs (e.g. "smart locks", "safes", "cameras")
   if (q.split(/\s+/).length > 4) return null;
 
   for (const cat of categories) {
     const catName = cat.name.toLowerCase();
     if (catName.includes(q) || q.includes(catName)) return cat;
-    // Match keywords like "locks", "safes", "camera"
     const words = q.split(/\s+/);
     for (const word of words) {
       if (word.length >= 5 && catName.includes(word)) return cat;
     }
   }
   return null;
+}
+
+// ── MEDIA HELPERS ──
+async function getMediaUrl(mediaId, accessToken) {
+  try {
+    const res = await fetch(`https://graph.facebook.com/v22.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.url || null;
+  } catch {
+    return null;
+  }
+}
+
+async function downloadMedia(url, accessToken) {
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return null;
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const mimeType = res.headers.get('content-type') || 'image/jpeg';
+    return { buffer, mimeType };
+  } catch {
+    return null;
+  }
 }
