@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
 const SHOWCASE_PRODUCTS = [
@@ -112,16 +113,16 @@ function ProductRow({ product, index }) {
             >
               {product.description}
             </p>
-            <a
-              href="#booking"
+            <Link
+              to="/products"
               className={`inline-block text-sm font-medium px-7 py-3 rounded-full border transition-all duration-200 ${
                 product.dark
                   ? 'border-white/30 text-white hover:bg-white hover:text-dark'
                   : 'border-dark/30 text-dark hover:bg-dark hover:text-white'
               }`}
             >
-              Book Now
-            </a>
+              View Products
+            </Link>
           </motion.div>
         </div>
       </div>
@@ -150,12 +151,12 @@ function ProductGridCard({ product, index }) {
           {product.title}
         </h4>
         <p className="text-white/70 text-sm mb-4 max-w-sm">{product.description}</p>
-        <a
-          href="#booking"
+        <Link
+          to="/products"
           className="inline-block text-sm font-medium px-6 py-2.5 rounded-full bg-white text-dark hover:bg-white/90 transition-all duration-200"
         >
-          Buy Now
-        </a>
+          View Products
+        </Link>
       </div>
     </motion.div>
   );

@@ -1,12 +1,14 @@
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
+import ProductCatalog from './pages/ProductCatalog';
 import Footer from './components/Footer';
 import FloatingButtons from './components/FloatingButtons';
 
 export default function App() {
   return (
-    <>
+    <BrowserRouter>
       <Toaster
         position="top-center"
         toastOptions={{
@@ -20,9 +22,12 @@ export default function App() {
         }}
       />
       <Navbar />
-      <Home />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/products" element={<ProductCatalog />} />
+      </Routes>
       <Footer />
       <FloatingButtons />
-    </>
+    </BrowserRouter>
   );
 }
