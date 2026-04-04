@@ -26,6 +26,40 @@ function buildProductContext(products) {
   return lines.join('\n');
 }
 
+/**
+ * Parse structured AI response.
+ * Expected formats:
+ *   SERVICE_SUMMARY: <short summary>\nSERVICE_MESSAGE: <user-facing message>
+ *   BOOKING: <product name>
+ *   NULL
+ *   <regular text reply>
+ */
+function parseAIResponse(text) {
+  if (!text) return null;
+  const trimmed = text.trim();
+
+  if (trimmed === 'NULL' || trimmed === 'null') return null;
+
+  if (trimmed.includes('SERVICE_SUMMARY:') && trimmed.includes('SERVICE_MESSAGE:')) {
+    const summaryMatch = trimmed.match(/SERVICE_SUMMARY:\s*(.+?)(?=\nSERVICE_MESSAGE:)/s);
+    const messageMatch = trimmed.match(/SERVICE_MESSAGE:\s*(.+)/s);
+    return {
+      type: 'service',
+      summary: summaryMatch ? summaryMatch[1].trim() : 'Product issue reported',
+      message: messageMatch ? messageMatch[1].trim() : trimmed,
+    };
+  }
+
+  if (trimmed.startsWith('BOOKING:')) {
+    return {
+      type: 'booking',
+      product: trimmed.replace('BOOKING:', '').trim(),
+    };
+  }
+
+  return { type: 'text', message: trimmed };
+}
+
 export async function askAI(query, client) {
   const ai = getGenAI();
   if (!ai) return null;
@@ -48,28 +82,24 @@ RULES:
 - Keep responses under 300 words
 - Contact: ${client.ownerPhone ? `+${client.ownerPhone}` : 'our team'}
 
-BOOKING DETECTION:
-- If the user says "okay", "I need", "yes", "interested", "I want", "book", "order", "go ahead", "proceed" and it's clearly about ordering a product → return ONLY: BOOKING:<product name>
+RESPONSE FORMATS (use exactly one):
 
-SERVICE/COMPLAINT DETECTION:
-- If the user reports a problem, complaint, broken lock, not working, battery issue, service needed → return ONLY: SERVICE:<brief AI analysis of the issue and what might be wrong, plus reassurance>
-- Examples: "my lock is not working", "fingerprint sensor broken", "lock jammed", "battery dead", "beeping sound"
+1. BOOKING — If the user says "okay", "I need", "yes", "interested", "I want", "book", "order" and it's about ordering a product:
+BOOKING:<product name>
 
-PRODUCT QUERIES:
-- For product questions, recommend the best matching products with details
-- Always end with: _Reply *order* to book, or ask me anything else!_
+2. SERVICE — If the user reports a problem (broken lock, not working, battery issue, service needed):
+SERVICE_SUMMARY: <one-line issue summary for records, e.g. "Lock cylinder removed - door unsecured">
+SERVICE_MESSAGE: <friendly message to customer explaining what you see, troubleshooting tips, and reassurance that a technician will help>
+
+3. PRODUCT QUERY — For product questions, just reply normally with recommendations. Always end with: _Reply *order* to book, or ask me anything else!_
 
 CUSTOMER QUERY: "${query}"
 
 Reply:`;
 
     const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    if (!text) return null;
-
-    if (text.trim() === 'NULL' || text.trim() === 'null') return null;
-
-    return text;
+    const raw = result.response.text();
+    return parseAIResponse(raw);
   } catch (err) {
     console.error('Gemini AI error:', err.message);
     return null;
@@ -94,27 +124,26 @@ export async function analyzeImage(imageBuffer, mimeType, caption, client) {
 
 A customer sent this image${caption ? ` with the message: "${caption}"` : ''}.
 
-Analyze the image and respond appropriately:
+Analyze the image and respond in ONE of these formats:
 
-1. If it shows a DAMAGED/BROKEN lock, error on a lock screen, or any product issue:
-   - Identify what the problem might be
-   - Give brief troubleshooting advice if possible
-   - Return: SERVICE:<your analysis of the issue, what seems wrong, and reassurance that a technician can help>
+1. If it shows a DAMAGED/BROKEN lock, error, or any product issue:
+SERVICE_SUMMARY: <one-line issue summary for records, e.g. "Lock cylinder damaged - mechanism exposed">
+SERVICE_MESSAGE: <friendly message to customer: identify the problem, give brief troubleshooting if possible, reassure that a technician can help fix it>
 
-2. If it shows a YALE PRODUCT and they seem to want info:
-   - Identify the product if possible
-   - Share relevant details from the catalog
+2. If it shows a YALE PRODUCT and they want info:
+<just reply normally identifying the product and sharing details>
 
-3. If it shows a DOOR or SPACE where they want to install a lock:
-   - Suggest suitable products based on what you see
+3. If it shows a DOOR/SPACE where they want to install a lock:
+<suggest suitable Yale products based on what you see>
 
-4. For anything else, describe what you see and ask how you can help.
+4. For anything else:
+<describe what you see and ask how you can help>
 
 Keep response under 200 words, WhatsApp-friendly format.`;
 
     const result = await model.generateContent([prompt, imagePart]);
-    const text = result.response.text();
-    return text || null;
+    const raw = result.response.text();
+    return parseAIResponse(raw);
   } catch (err) {
     console.error('Gemini image analysis error:', err.message);
     return null;

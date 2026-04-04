@@ -38,19 +38,16 @@ export async function handleMessage(message, client) {
     if (imageUrl) {
       const imageData = await downloadMedia(imageUrl, accessToken);
       if (imageData) {
-        const aiAnalysis = await analyzeImage(imageData.buffer, imageData.mimeType, caption, client);
-        if (aiAnalysis) {
-          // Check if AI detected a service issue
-          if (aiAnalysis.trim().startsWith('SERVICE:')) {
-            const aiMessage = aiAnalysis.replace('SERVICE:', '').trim();
-            const shortIssue = caption || 'Customer shared image of issue';
+        const aiResult = await analyzeImage(imageData.buffer, imageData.mimeType, caption, client);
+        if (aiResult) {
+          if (aiResult.type === 'service') {
             session.state = 'service_name';
-            session.data = { issue: shortIssue, hasImage: true, imageId };
+            session.data = { issue: aiResult.summary, hasImage: true, imageId };
             await sendText(phoneNumberId, accessToken, from,
-              `${aiMessage}\n\nLet me help you raise a service request. 📝\n\nPlease share your *full name*:`);
+              `${aiResult.message}\n\nLet me help you raise a service request. 📝\n\nPlease share your *full name*:`);
             return;
           }
-          await sendText(phoneNumberId, accessToken, from, aiAnalysis);
+          await sendText(phoneNumberId, accessToken, from, aiResult.message || aiResult);
           return;
         }
       }
@@ -284,34 +281,32 @@ export async function handleMessage(message, client) {
   }
 
   // ── AI FOR COMPLEX QUERIES ──
-  const aiReply = await askAI(text, client);
-  if (aiReply) {
+  const aiResult = await askAI(text, client);
+  if (aiResult) {
     // AI detected booking intent
-    if (aiReply.trim().startsWith('BOOKING:')) {
-      const productName = aiReply.trim().replace('BOOKING:', '').trim();
+    if (aiResult.type === 'booking') {
       session.state = 'booking_name';
-      session.data = { product: productName };
+      session.data = { product: aiResult.product };
       await sendText(phoneNumberId, accessToken, from,
-        `Great choice! Let's get your order for *${productName}* started. 📝\n\nPlease share your *full name*:`);
+        `Great choice! Let's get your order for *${aiResult.product}* started. 📝\n\nPlease share your *full name*:`);
       return;
     }
 
     // AI detected service/complaint intent
-    if (aiReply.trim().startsWith('SERVICE:')) {
-      const aiMessage = aiReply.replace('SERVICE:', '').trim();
-      // Store original user query as the short issue, AI message is for display
-      const shortIssue = text.length <= 200 ? text : text.substring(0, 200);
+    if (aiResult.type === 'service') {
       session.state = 'service_name';
-      session.data = { issue: shortIssue };
+      session.data = { issue: aiResult.summary };
       await sendText(phoneNumberId, accessToken, from,
-        `${aiMessage}\n\nLet me raise a service request for you. 📝\n\nPlease share your *full name*:`);
+        `${aiResult.message}\n\nLet me raise a service request for you. 📝\n\nPlease share your *full name*:`);
       return;
     }
 
+    // Regular text reply
+    const replyText = aiResult.message || '';
     // Extract product names mentioned by AI and save to session
     for (const cat of client.products) {
       for (const p of cat.products) {
-        if (aiReply.includes(p.name)) {
+        if (replyText.includes(p.name)) {
           session.lastProduct = p.name;
           break;
         }
@@ -319,7 +314,7 @@ export async function handleMessage(message, client) {
       if (session.lastProduct) break;
     }
 
-    await sendText(phoneNumberId, accessToken, from, aiReply);
+    await sendText(phoneNumberId, accessToken, from, replyText);
     return;
   }
 
