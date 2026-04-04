@@ -282,14 +282,23 @@ function findProduct(query, categories) {
 }
 
 function findCategory(query, categories) {
-  const q = query.toLowerCase();
+  const q = query.toLowerCase().trim();
+
+  // Skip if it looks like a question (contains question words or "?")
+  if (/\?|which|what|how|best|recommend|suggest|can|does|should|tell me/i.test(q)) {
+    return null;
+  }
+
+  // Only match short, direct inputs (e.g. "smart locks", "safes", "cameras")
+  if (q.split(/\s+/).length > 4) return null;
+
   for (const cat of categories) {
     const catName = cat.name.toLowerCase();
     if (catName.includes(q) || q.includes(catName)) return cat;
     // Match keywords like "locks", "safes", "camera"
     const words = q.split(/\s+/);
     for (const word of words) {
-      if (word.length >= 4 && catName.includes(word)) return cat;
+      if (word.length >= 5 && catName.includes(word)) return cat;
     }
   }
   return null;
