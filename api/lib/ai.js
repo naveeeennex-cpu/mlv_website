@@ -44,11 +44,12 @@ RULES:
 - Answer in a friendly, concise WhatsApp-friendly format (short paragraphs, use emojis sparingly)
 - Always include product name, price, and key features in recommendations
 - If asked about a product not in the catalog, say you don't carry it
-- If the query is not about products (greeting, random chat), return null
+- If the query is not about products (greeting, random chat), return ONLY the word NULL
 - Keep responses under 300 words
-- For booking/installation queries, ask them to reply with their Name, Location, and preferred date
-- Always end with a helpful follow-up question or CTA
+- Always end by asking if they'd like to order or book an installation
 - Contact: ${client.ownerPhone ? `+${client.ownerPhone}` : 'our team'}
+- If the user says something like "okay", "I need", "yes", "interested", "I want", "book", "order" — they want to proceed with booking. In that case return ONLY: BOOKING:<product name>
+- VERY IMPORTANT: Your last line must always be: _Reply *order* to book, or ask me anything else!_
 
 CUSTOMER QUERY: "${query}"
 
@@ -56,7 +57,12 @@ Reply:`;
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();
-    return text || null;
+    if (!text) return null;
+
+    // Check if AI says it's not a product query
+    if (text.trim() === 'NULL' || text.trim() === 'null') return null;
+
+    return text;
   } catch (err) {
     console.error('Gemini AI error:', err.message);
     return null;

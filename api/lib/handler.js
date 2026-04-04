@@ -111,8 +111,10 @@ export async function handleMessage(message, client) {
     return;
   }
 
-  // Order / enquire about last viewed product
-  if ((lower === 'order' || lower === 'enquire' || lower === 'buy' || lower === 'btn_order') && session.lastProduct) {
+  // Order / enquire / confirm interest about last viewed product
+  const orderTriggers = ['order', 'enquire', 'buy', 'btn_order', 'okay', 'ok', 'yes', 'yeah',
+    'interested', 'i want', 'i need', 'book it', 'go ahead', 'proceed', 'sure'];
+  if (orderTriggers.some(t => lower === t || lower.startsWith(t)) && session.lastProduct) {
     session.state = 'booking_name';
     session.data = { product: session.lastProduct };
     await sendText(phoneNumberId, accessToken, from,
@@ -164,6 +166,27 @@ export async function handleMessage(message, client) {
   // Try AI for complex queries
   const aiReply = await askAI(text, client);
   if (aiReply) {
+    // Check if AI detected a booking intent
+    if (aiReply.trim().startsWith('BOOKING:')) {
+      const productName = aiReply.trim().replace('BOOKING:', '').trim();
+      session.state = 'booking_name';
+      session.data = { product: productName };
+      await sendText(phoneNumberId, accessToken, from,
+        `Great choice! Let's get your order for *${productName}* started. 📝\n\nPlease share your *full name*:`);
+      return;
+    }
+
+    // Extract product names mentioned by AI and save to session
+    for (const cat of client.products) {
+      for (const p of cat.products) {
+        if (aiReply.includes(p.name)) {
+          session.lastProduct = p.name;
+          break;
+        }
+      }
+      if (session.lastProduct) break;
+    }
+
     await sendText(phoneNumberId, accessToken, from, aiReply);
     return;
   }
