@@ -31,7 +31,7 @@ export async function askAI(query, client) {
   if (!ai) return null;
 
   try {
-    const model = ai.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const productContext = buildProductContext(client.products);
 
