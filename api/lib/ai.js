@@ -106,6 +106,81 @@ Reply:`;
   }
 }
 
+/**
+ * AI-driven detail collection for booking/service flows.
+ * Extracts name/phone/location/date from natural-language replies, ignores
+ * confirmations and chit-chat, and asks only for what's still missing.
+ *
+ * Returns: { data, complete, confirmed, reply } — or null if AI unavailable/failed.
+ */
+export async function extractDetails(flowType, currentData, userMessage, client) {
+  const ai = getGenAI();
+  if (!ai) return null;
+
+  try {
+    const model = ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const flowDesc = flowType === 'service'
+      ? 'service/complaint request (technician will visit to repair/inspect)'
+      : 'product booking / installation order';
+
+    const productLine = currentData.product ? `\nPRODUCT: ${currentData.product}` : '';
+    const issueLine = currentData.issue ? `\nREPORTED ISSUE: ${currentData.issue}` : '';
+
+    const prompt = `You are collecting customer details on WhatsApp for ${client.businessName} (${flowDesc}).${productLine}${issueLine}
+
+REQUIRED FIELDS: name, phone, location, date
+CURRENT DATA: ${JSON.stringify({
+      name: currentData.name || null,
+      phone: currentData.phone || null,
+      location: currentData.location || null,
+      date: currentData.date || null,
+    })}
+
+USER'S NEW MESSAGE: "${userMessage}"
+
+EXTRACTION RULES:
+- A user message may contain one field, multiple fields, or none.
+- IGNORE filler words as names: "yes", "yess", "yeah", "ok", "okay", "sure", "hi", "hello", "thanks", "confirm", "this is yale product", any single confirmation word.
+- Phone must contain at least 10 digits — strip spaces/dashes/+. Reject if fewer.
+- Date can be relative ("next monday", "tomorrow 10am", "15 april") — keep as the user wrote it.
+- Location is a city/area name.
+- If the user asks a question or chats off-topic, answer briefly in "reply" and re-ask the next missing field. Do NOT lose existing data.
+- Do NOT overwrite a field that's already filled unless the user clearly corrects it ("actually my name is...").
+
+COMPLETION:
+- complete = true ONLY when all 4 fields are non-null.
+- When complete=true and user has NOT yet confirmed, your "reply" must show a summary of all 4 fields and ask "Reply *YES* to confirm or tell me what to change."
+- confirmed = true ONLY when CURRENT DATA already has all 4 fields AND user's new message is a confirmation ("yes", "confirm", "ok", "go ahead", "looks good", etc.).
+- If user says they want to change something, set the corrected field and complete=false.
+
+Return ONLY valid JSON, no markdown fences:
+{
+  "data": {"name": "<or null>", "phone": "<or null>", "location": "<or null>", "date": "<or null>"},
+  "complete": <boolean>,
+  "confirmed": <boolean>,
+  "reply": "<friendly WhatsApp message under 60 words>"
+}`;
+
+    const result = await model.generateContent(prompt);
+    const raw = result.response.text();
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+
+    const parsed = JSON.parse(match[0]);
+    if (!parsed || typeof parsed.reply !== 'string') return null;
+    return {
+      data: parsed.data || {},
+      complete: !!parsed.complete,
+      confirmed: !!parsed.confirmed,
+      reply: parsed.reply,
+    };
+  } catch (err) {
+    console.error('Gemini extractDetails error:', err.message);
+    return null;
+  }
+}
+
 export async function analyzeImage(imageBuffer, mimeType, caption, client) {
   const ai = getGenAI();
   if (!ai) return null;
