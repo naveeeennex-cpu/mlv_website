@@ -1,5 +1,5 @@
 import { sendText, sendInteractiveButtons, sendImage, markAsRead } from './whatsapp.js';
-import { askAI, analyzeImage } from './ai.js';
+import { askAI, analyzeImage, extractDetails } from './ai.js';
 
 // In-memory session store (resets on cold start — fine for stateless flows)
 const sessions = new Map();
@@ -12,6 +12,119 @@ function getSession(from) {
 }
 
 const GREETINGS = ['hi', 'hello', 'hey', 'hola', 'start', 'menu', 'help', 'hai', 'hii'];
+
+const RESERVED_NAME_WORDS = new Set([
+  'yes', 'yess', 'no', 'nope', 'yeah', 'yep', 'ok', 'okay', 'sure', 'thanks',
+  'thank you', 'cancel', 'stop', 'hi', 'hello', 'hey', 'menu', 'start', 'help',
+  'confirm', 'done', 'k', 'kk',
+]);
+
+function isPlausibleName(text) {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (trimmed.length < 2 || trimmed.length > 80) return false;
+  if (/^\d+$/.test(trimmed)) return false;
+  if (RESERVED_NAME_WORDS.has(trimmed.toLowerCase())) return false;
+  return true;
+}
+
+function isPlausiblePhone(text) {
+  if (!text) return false;
+  const digits = text.replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 15;
+}
+
+async function finalizeBooking(phoneNumberId, accessToken, from, data, client) {
+  const productInfo = data.product ? `\nProduct: ${data.product}` : '';
+  const summary = `✅ *Booking Confirmed!*\n\n` +
+    `Name: ${data.name}\n` +
+    `Phone: ${data.phone}\n` +
+    `Location: ${data.location}\n` +
+    `Preferred Date: ${data.date}${productInfo}\n\n` +
+    `Our team will contact you shortly to confirm. You can also reach us at +${client.ownerPhone}`;
+
+  await sendText(phoneNumberId, accessToken, from, summary);
+
+  if (client.ownerPhone) {
+    const ownerMsg = `🔔 *New Booking Request*\n\n` +
+      `From: wa.me/${from}\n` +
+      `Name: ${data.name}\n` +
+      `Phone: ${data.phone}\n` +
+      `Location: ${data.location}\n` +
+      `Date: ${data.date}${productInfo}`;
+    await sendText(phoneNumberId, accessToken, client.ownerPhone, ownerMsg);
+  }
+}
+
+async function finalizeService(phoneNumberId, accessToken, from, data, client) {
+  const issue = data.issue || 'Not specified';
+  const hasImage = data.hasImage ? '\n📷 Image attached' : '';
+  const summary = `✅ *Service Request Registered!*\n\n` +
+    `Name: ${data.name}\n` +
+    `Phone: ${data.phone}\n` +
+    `Location: ${data.location}\n` +
+    `Preferred Date: ${data.date}\n` +
+    `Issue: ${issue}${hasImage}\n\n` +
+    `Our technician will contact you to confirm the visit. For urgent help, call +${client.ownerPhone}`;
+
+  await sendText(phoneNumberId, accessToken, from, summary);
+
+  if (client.ownerPhone) {
+    const ownerMsg = `🚨 *New Service/Complaint Request*\n\n` +
+      `From: wa.me/${from}\n` +
+      `Name: ${data.name}\n` +
+      `Phone: ${data.phone}\n` +
+      `Location: ${data.location}\n` +
+      `Date: ${data.date}\n` +
+      `Issue: ${issue}${hasImage}`;
+    await sendText(phoneNumberId, accessToken, client.ownerPhone, ownerMsg);
+
+    if (data.hasImage && data.imageId) {
+      await sendImage(phoneNumberId, accessToken, client.ownerPhone, data.imageId,
+        `📷 Image from ${data.name} (${data.phone}) - ${issue}`);
+    }
+  }
+}
+
+function nextLegacyState(flowType, data) {
+  const prefix = flowType === 'service' ? 'service' : 'booking';
+  if (!data.name) return `${prefix}_name`;
+  if (!data.phone) return `${prefix}_phone`;
+  if (!data.location) return `${prefix}_location`;
+  if (!data.date) return `${prefix}_date`;
+  return null;
+}
+
+function legacyPrompt(flowType, data) {
+  if (!data.name) return `Please share your *full name*:`;
+  if (!data.phone) return `📱 Please share your *phone number*:`;
+  if (!data.location) return `📍 Please share your *location/city*:`;
+  if (!data.date) {
+    return flowType === 'service'
+      ? `📅 When would be a good time for our technician to visit? (e.g., "Tomorrow 10AM", "Next Monday")`
+      : `📅 When would you prefer? (e.g., "Next Monday", "15 April")`;
+  }
+  return '';
+}
+
+async function fallbackToLegacy(phoneNumberId, accessToken, from, session, client, reason) {
+  const flowType = session.flowType || 'booking';
+  const next = nextLegacyState(flowType, session.data);
+  if (!next) {
+    // All fields collected — finalize directly
+    if (flowType === 'service') {
+      await finalizeService(phoneNumberId, accessToken, from, session.data, client);
+    } else {
+      await finalizeBooking(phoneNumberId, accessToken, from, session.data, client);
+    }
+    session.state = 'idle';
+    session.data = {};
+    return;
+  }
+  session.state = next;
+  if (reason) console.warn(`AI flow falling back to legacy (${reason})`);
+  await sendText(phoneNumberId, accessToken, from, legacyPrompt(flowType, session.data));
+}
 
 export async function handleMessage(message, client) {
   const { phoneNumberId, accessToken } = client;
@@ -41,7 +154,8 @@ export async function handleMessage(message, client) {
         const aiResult = await analyzeImage(imageData.buffer, imageData.mimeType, caption, client);
         if (aiResult) {
           if (aiResult.type === 'service') {
-            session.state = 'service_name';
+            session.flowType = 'service';
+            session.state = 'ai_collecting';
             session.data = { issue: aiResult.summary, hasImage: true, imageId };
             await sendText(phoneNumberId, accessToken, from,
               `${aiResult.message}\n\nLet me help you raise a service request. 📝\n\nPlease share your *full name*:`);
@@ -77,15 +191,69 @@ export async function handleMessage(message, client) {
   const lower = text.toLowerCase();
   const session = getSession(from);
 
-  // ── BOOKING FLOW ──
+  // ── AI-DRIVEN COLLECTION (preferred path) ──
+  if (session.state === 'ai_collecting') {
+    // Allow user to bail out
+    if (GREETINGS.includes(lower) || lower === 'cancel' || lower === 'stop') {
+      session.state = 'idle';
+      session.data = {};
+      session.flowType = null;
+      await sendGreeting(phoneNumberId, accessToken, from, client);
+      return;
+    }
+
+    const result = await extractDetails(session.flowType, session.data, text, client);
+
+    if (!result) {
+      // AI unavailable or errored — degrade to rigid flow with whatever we have
+      await fallbackToLegacy(phoneNumberId, accessToken, from, session, client, 'extractDetails returned null');
+      return;
+    }
+
+    // Merge extracted fields, preserving non-data session keys (product, issue, hasImage, imageId)
+    const merged = { ...session.data };
+    for (const k of ['name', 'phone', 'location', 'date']) {
+      if (result.data[k] && result.data[k] !== 'null') merged[k] = result.data[k];
+    }
+    session.data = merged;
+
+    // Final confirmation
+    if (result.confirmed && session.data.name && session.data.phone &&
+        session.data.location && session.data.date) {
+      if (session.flowType === 'service') {
+        await finalizeService(phoneNumberId, accessToken, from, session.data, client);
+      } else {
+        await finalizeBooking(phoneNumberId, accessToken, from, session.data, client);
+      }
+      session.state = 'idle';
+      session.data = {};
+      session.flowType = null;
+      return;
+    }
+
+    await sendText(phoneNumberId, accessToken, from, result.reply);
+    return;
+  }
+
+  // ── LEGACY BOOKING FLOW (fallback when AI unavailable) ──
   if (session.state === 'booking_name') {
+    if (!isPlausibleName(text)) {
+      await sendText(phoneNumberId, accessToken, from,
+        `That doesn't look like a name. Please share your *full name* (e.g., "Naveen Kumar"):`);
+      return;
+    }
     session.data.name = text;
     session.state = 'booking_phone';
     await sendText(phoneNumberId, accessToken, from, `Thanks ${text}! 📱 Please share your *phone number*:`);
     return;
   }
   if (session.state === 'booking_phone') {
-    session.data.phone = text;
+    if (!isPlausiblePhone(text)) {
+      await sendText(phoneNumberId, accessToken, from,
+        `Please share a valid *phone number* with at least 10 digits:`);
+      return;
+    }
+    session.data.phone = text.replace(/\D/g, '');
     session.state = 'booking_location';
     await sendText(phoneNumberId, accessToken, from, `Got it! 📍 Please share your *location/city*:`);
     return;
@@ -98,42 +266,31 @@ export async function handleMessage(message, client) {
   }
   if (session.state === 'booking_date') {
     session.data.date = text;
+    await finalizeBooking(phoneNumberId, accessToken, from, session.data, client);
     session.state = 'idle';
-
-    const productInfo = session.data.product ? `\nProduct: ${session.data.product}` : '';
-    const summary = `✅ *Booking Confirmed!*\n\n` +
-      `Name: ${session.data.name}\n` +
-      `Phone: ${session.data.phone}\n` +
-      `Location: ${session.data.location}\n` +
-      `Preferred Date: ${session.data.date}${productInfo}\n\n` +
-      `Our team will contact you shortly to confirm. You can also reach us at +${client.ownerPhone}`;
-
-    await sendText(phoneNumberId, accessToken, from, summary);
-
-    // Notify business owner
-    if (client.ownerPhone) {
-      const ownerMsg = `🔔 *New Booking Request*\n\n` +
-        `From: wa.me/${from}\n` +
-        `Name: ${session.data.name}\n` +
-        `Phone: ${session.data.phone}\n` +
-        `Location: ${session.data.location}\n` +
-        `Date: ${session.data.date}${productInfo}`;
-      await sendText(phoneNumberId, accessToken, client.ownerPhone, ownerMsg);
-    }
-
     session.data = {};
     return;
   }
 
-  // ── SERVICE / COMPLAINT FLOW ──
+  // ── LEGACY SERVICE / COMPLAINT FLOW (fallback when AI unavailable) ──
   if (session.state === 'service_name') {
+    if (!isPlausibleName(text)) {
+      await sendText(phoneNumberId, accessToken, from,
+        `That doesn't look like a name. Please share your *full name*:`);
+      return;
+    }
     session.data.name = text;
     session.state = 'service_phone';
     await sendText(phoneNumberId, accessToken, from, `Thanks ${text}! 📱 Please share your *phone number*:`);
     return;
   }
   if (session.state === 'service_phone') {
-    session.data.phone = text;
+    if (!isPlausiblePhone(text)) {
+      await sendText(phoneNumberId, accessToken, from,
+        `Please share a valid *phone number* with at least 10 digits:`);
+      return;
+    }
+    session.data.phone = text.replace(/\D/g, '');
     session.state = 'service_location';
     await sendText(phoneNumberId, accessToken, from, `Got it! 📍 Please share your *location/city*:`);
     return;
@@ -146,43 +303,23 @@ export async function handleMessage(message, client) {
   }
   if (session.state === 'service_date') {
     session.data.date = text;
+    await finalizeService(phoneNumberId, accessToken, from, session.data, client);
     session.state = 'idle';
-
-    const issue = session.data.issue || 'Not specified';
-    const hasImage = session.data.hasImage ? '\n📷 Image attached' : '';
-    const summary = `✅ *Service Request Registered!*\n\n` +
-      `Name: ${session.data.name}\n` +
-      `Phone: ${session.data.phone}\n` +
-      `Location: ${session.data.location}\n` +
-      `Preferred Date: ${session.data.date}\n` +
-      `Issue: ${issue}${hasImage}\n\n` +
-      `Our technician will contact you to confirm the visit. For urgent help, call +${client.ownerPhone}`;
-
-    await sendText(phoneNumberId, accessToken, from, summary);
-
-    // Notify business owner
-    if (client.ownerPhone) {
-      const ownerMsg = `🚨 *New Service/Complaint Request*\n\n` +
-        `From: wa.me/${from}\n` +
-        `Name: ${session.data.name}\n` +
-        `Phone: ${session.data.phone}\n` +
-        `Location: ${session.data.location}\n` +
-        `Date: ${session.data.date}\n` +
-        `Issue: ${issue}${hasImage}`;
-      await sendText(phoneNumberId, accessToken, client.ownerPhone, ownerMsg);
-
-      // Forward customer's image to owner
-      if (session.data.hasImage && session.data.imageId) {
-        await sendImage(phoneNumberId, accessToken, client.ownerPhone, session.data.imageId,
-          `📷 Image from ${session.data.name} (${session.data.phone}) - ${issue}`);
-      }
-    }
-
     session.data = {};
     return;
   }
   if (session.state === 'complaint_details') {
     session.data.issue = text;
+    // Try AI-driven flow first
+    session.flowType = 'service';
+    session.state = 'ai_collecting';
+    const result = await extractDetails('service', session.data, text, client);
+    if (result) {
+      await sendText(phoneNumberId, accessToken, from,
+        `I understand the issue. Let me raise a service request for you. 📝\n\n${result.reply}`);
+      return;
+    }
+    // AI unavailable — use rigid flow
     session.state = 'service_name';
     await sendText(phoneNumberId, accessToken, from,
       `I understand the issue. Let me raise a service request for you. 📝\n\nPlease share your *full name*:`);
@@ -204,7 +341,8 @@ export async function handleMessage(message, client) {
   }
 
   if (lower === '2' || lower === 'book' || lower === 'install' || lower === 'installation' || lower === 'btn_book') {
-    session.state = 'booking_name';
+    session.flowType = 'booking';
+    session.state = 'ai_collecting';
     session.data = {};
     await sendText(phoneNumberId, accessToken, from, `Great! Let's book an installation. 📝\n\nPlease share your *full name*:`);
     return;
@@ -235,7 +373,8 @@ export async function handleMessage(message, client) {
   const orderTriggers = ['order', 'enquire', 'buy', 'btn_order', 'okay', 'ok', 'yes', 'yeah',
     'interested', 'i want', 'i need', 'book it', 'go ahead', 'proceed', 'sure'];
   if (orderTriggers.some(t => lower === t || lower.startsWith(t)) && session.lastProduct) {
-    session.state = 'booking_name';
+    session.flowType = 'booking';
+    session.state = 'ai_collecting';
     session.data = { product: session.lastProduct };
     await sendText(phoneNumberId, accessToken, from,
       `Great choice! Let's get your order for *${session.lastProduct}* started. 📝\n\nPlease share your *full name*:`);
@@ -285,7 +424,8 @@ export async function handleMessage(message, client) {
   if (aiResult) {
     // AI detected booking intent
     if (aiResult.type === 'booking') {
-      session.state = 'booking_name';
+      session.flowType = 'booking';
+      session.state = 'ai_collecting';
       session.data = { product: aiResult.product };
       await sendText(phoneNumberId, accessToken, from,
         `Great choice! Let's get your order for *${aiResult.product}* started. 📝\n\nPlease share your *full name*:`);
@@ -294,7 +434,8 @@ export async function handleMessage(message, client) {
 
     // AI detected service/complaint intent
     if (aiResult.type === 'service') {
-      session.state = 'service_name';
+      session.flowType = 'service';
+      session.state = 'ai_collecting';
       session.data = { issue: aiResult.summary };
       await sendText(phoneNumberId, accessToken, from,
         `${aiResult.message}\n\nLet me raise a service request for you. 📝\n\nPlease share your *full name*:`);
