@@ -217,9 +217,16 @@ export async function handleMessage(message, client) {
     }
     session.data = merged;
 
-    // Final confirmation
-    if (result.confirmed && session.data.name && session.data.phone &&
-        session.data.location && session.data.date) {
+    // Final confirmation — trust either the AI's confirmed flag OR a clear user
+    // "yes" once all 4 fields are collected. Gemini sometimes generates a
+    // confirmation-sounding reply but forgets to set confirmed:true, which
+    // would otherwise skip finalizeBooking and leave admin un-notified.
+    const allFieldsPresent = session.data.name && session.data.phone &&
+                             session.data.location && session.data.date;
+    const userConfirmed = /^(yes|yess|yeah|yep|y|ok|okay|sure|confirm|confirmed|done|go ahead|proceed|looks good|perfect|great|correct|right)\.?$/i
+                          .test(text.trim());
+
+    if (allFieldsPresent && (result.confirmed || userConfirmed)) {
       if (session.flowType === 'service') {
         await finalizeService(phoneNumberId, accessToken, from, session.data, client);
       } else {
