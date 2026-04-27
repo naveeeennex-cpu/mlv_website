@@ -335,12 +335,20 @@ export async function handleMessage(message, client) {
   }
 
   // ── MAIN MENU OPTIONS ──
-  if (lower === '1' || lower === 'products' || lower === 'browse' || lower === 'btn_products') {
+  // Bare digits are only treated as main-menu shortcuts when not already browsing
+  // a list — otherwise "1" while viewing categories would re-show categories
+  // instead of selecting category #1.
+  const onMainMenu = session.state === 'idle';
+
+  if (lower === 'products' || lower === 'browse' || lower === 'btn_products' ||
+      (lower === '1' && onMainMenu)) {
+    session.state = 'browsing_categories';
     await sendCategories(phoneNumberId, accessToken, from, client);
     return;
   }
 
-  if (lower === '2' || lower === 'book' || lower === 'install' || lower === 'installation' || lower === 'btn_book') {
+  if (lower === 'book' || lower === 'install' || lower === 'installation' || lower === 'btn_book' ||
+      (lower === '2' && onMainMenu)) {
     session.flowType = 'booking';
     session.state = 'ai_collecting';
     session.data = {};
@@ -348,7 +356,8 @@ export async function handleMessage(message, client) {
     return;
   }
 
-  if (lower === '3' || lower === 'talk' || lower === 'contact' || lower === 'support' || lower === 'btn_contact') {
+  if (lower === 'talk' || lower === 'contact' || lower === 'support' || lower === 'btn_contact' ||
+      (lower === '3' && onMainMenu)) {
     await sendText(phoneNumberId, accessToken, from,
       `📞 *Contact ${client.businessName}*\n\n` +
       `Phone: +${client.ownerPhone}\n` +
@@ -359,9 +368,9 @@ export async function handleMessage(message, client) {
   }
 
   // Service / complaint triggers
-  if (lower === '4' || lower === 'service' || lower === 'complaint' || lower === 'repair' ||
+  if (lower === 'service' || lower === 'complaint' || lower === 'repair' ||
       lower === 'issue' || lower === 'problem' || lower === 'broken' || lower === 'not working' ||
-      lower === 'btn_service') {
+      lower === 'btn_service' || (lower === '4' && onMainMenu)) {
     session.state = 'complaint_details';
     session.data = {};
     await sendText(phoneNumberId, accessToken, from,
