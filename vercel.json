@@ -1,0 +1,14 @@
+{
+  "rewrites": [
+    { "source": "/api/products", "destination": "/api/products" },
+    { "source": "/api/webhook", "destination": "/api/webhook" },
+    { "source": "/api/follow-up", "destination": "/api/follow-up" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/follow-up",
+      "schedule": "30 7 * * *"
+    }
+  ]
+}
