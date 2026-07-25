@@ -1,4 +1,4 @@
-import { getDb } from './lib/db.js';
+import { getDb } from '../lib/db.js';
 
 const CORS = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');

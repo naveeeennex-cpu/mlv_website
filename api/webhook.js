@@ -1,5 +1,5 @@
-import { getClientByPhoneId } from './lib/clients.js';
-import { handleMessage } from './lib/handler.js';
+import { getClientByPhoneId } from '../lib/clients.js';
+import { handleMessage } from '../lib/handler.js';
 
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'mlv_whatsapp_bot_2026';
 

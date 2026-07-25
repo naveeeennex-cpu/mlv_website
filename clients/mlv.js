@@ -1,7 +1,7 @@
 // MLV Enterprises - Yale Smart Lock Experts
 // Product data imported from the frontend catalog
 
-import { PRODUCT_CATEGORIES } from '../../src/data/products.js';
+import { PRODUCT_CATEGORIES } from '../src/data/products.js';
 
 export const mlvConfig = {
   phoneNumberId: process.env.MLV_PHONE_ID || '1054951294370438',

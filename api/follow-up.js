@@ -1,4 +1,4 @@
-import { runFollowUp } from './lib/followup.js';
+import { runFollowUp } from '../lib/followup.js';
 
 export default async function handler(req, res) {
   const cronSecret = process.env.CRON_SECRET;

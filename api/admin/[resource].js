@@ -1,10 +1,10 @@
 import bcrypt from 'bcryptjs';
-import { signToken, requireAuth, cors } from '../lib/auth.js';
-import { getDb } from '../lib/db.js';
-import { getClientByPhoneId, getAllClients } from '../lib/clients.js';
-import { invalidateConfig } from '../lib/config.js';
-import { runFollowUp } from '../lib/followup.js';
-import { sendText, sendImageUrl } from '../lib/whatsapp.js';
+import { signToken, requireAuth, cors } from '../../lib/auth.js';
+import { getDb } from '../../lib/db.js';
+import { getClientByPhoneId, getAllClients } from '../../lib/clients.js';
+import { invalidateConfig } from '../../lib/config.js';
+import { runFollowUp } from '../../lib/followup.js';
+import { sendText, sendImageUrl } from '../../lib/whatsapp.js';
 
 const GRAPH_API = 'https://graph.facebook.com/v22.0';
 const DELAY_MS = 500;
