@@ -3,11 +3,12 @@ import { NavLink, useNavigate, Outlet, useLocation } from 'react-router-dom';
 import { clearToken, isLoggedIn } from './useAdmin';
 import {
   FiPackage, FiMessageSquare, FiLogOut, FiGrid,
-  FiSettings, FiUsers, FiClock, FiBell, FiMenu, FiX, FiLayers,
+  FiSettings, FiUsers, FiClock, FiBell, FiMenu, FiX, FiLayers, FiInbox,
 } from 'react-icons/fi';
 
 const NAV_ITEMS = [
   { to: '/admin/products',      icon: FiPackage,     label: 'Products' },
+  { to: '/admin/leads',         icon: FiInbox,       label: 'Leads' },
   { to: '/admin/categories',    icon: FiLayers,      label: 'Categories' },
   { to: '/admin/prompt',        icon: FiMessageSquare, label: 'AI Prompt' },
   { to: '/admin/chats',         icon: FiUsers,       label: 'Chats' },

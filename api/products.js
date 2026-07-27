@@ -83,6 +83,8 @@ function normalize(p) {
     finishes: Array.isArray(p.finishes) ? p.finishes : JSON.parse(p.finishes || '[]'),
     doorMaterial: Array.isArray(p.door_material) ? p.door_material : JSON.parse(p.door_material || '[]'),
     doorConfiguration: Array.isArray(p.door_configuration) ? p.door_configuration : JSON.parse(p.door_configuration || '[]'),
+    applications: p.applications || null,
+    advantages: p.advantages || null,
     image: p.image,
     bundleIncludes: p.bundle_includes || null,
     inStock: p.in_stock !== false,

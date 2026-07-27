@@ -14,6 +14,7 @@ import ProductDetail from './pages/ProductDetail';
 import AdminLogin from './admin/AdminLogin';
 import AdminLayout from './admin/AdminLayout';
 import AdminProducts from './admin/AdminProducts';
+import AdminLeads from './admin/AdminLeads';
 import AdminCategories from './admin/AdminCategories';
 import AdminPrompt from './admin/AdminPrompt';
 import AdminSettings from './admin/AdminSettings';
@@ -35,6 +36,7 @@ function AppInner() {
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin" element={<AdminLayout />}>
           <Route path="products" element={<AdminProducts />} />
+          <Route path="leads" element={<AdminLeads />} />
           <Route path="categories" element={<AdminCategories />} />
           <Route path="prompt" element={<AdminPrompt />} />
           <Route path="settings" element={<AdminSettings />} />

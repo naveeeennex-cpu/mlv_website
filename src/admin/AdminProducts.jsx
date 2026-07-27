@@ -159,6 +159,8 @@ function EditModal({ product, categories, onClose, onSave, onReloadCategories })
     bundle_includes: product?.bundle_includes || '',
     door_material: Array.isArray(product?.door_material) ? product.door_material : [],
     door_configuration: Array.isArray(product?.door_configuration) ? product.door_configuration : [],
+    applications: product?.applications || '',
+    advantages: product?.advantages || '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -350,6 +352,26 @@ function EditModal({ product, categories, onClose, onSave, onReloadCategories })
             </div>
           </div>
 
+          <div>
+            <label className="block text-xs text-gray-500 font-medium mb-1">Applications <span className="text-gray-400 font-normal">· shown on product page & WhatsApp</span></label>
+            <textarea
+              value={form.applications}
+              onChange={e => setForm(f => ({ ...f, applications: e.target.value }))}
+              rows={2}
+              placeholder="e.g. Ideal for main doors, apartments, villas and office entrances."
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm focus:outline-none focus:border-[#1a5c2a] resize-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 font-medium mb-1">Advantages</label>
+            <textarea
+              value={form.advantages}
+              onChange={e => setForm(f => ({ ...f, advantages: e.target.value }))}
+              rows={2}
+              placeholder="e.g. Keyless entry, tamper alarm, auto-lock, 5-year warranty."
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm focus:outline-none focus:border-[#1a5c2a] resize-none"
+            />
+          </div>
           <ImageUpload
             value={form.image}
             onChange={url => setForm(f => ({ ...f, image: url }))}

@@ -379,6 +379,30 @@ export default function ProductDetail() {
           </motion.div>
         )}
 
+        {/* Applications & Advantages */}
+        {(product.applications || product.advantages) && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="mb-16 grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl"
+          >
+            {product.applications && (
+              <div className="bg-light-bg rounded-2xl p-6">
+                <h3 className="text-lg font-light italic text-dark tracking-tight mb-3">Applications</h3>
+                <p className="text-dark/60 text-sm leading-relaxed whitespace-pre-line">{product.applications}</p>
+              </div>
+            )}
+            {product.advantages && (
+              <div className="bg-light-bg rounded-2xl p-6">
+                <h3 className="text-lg font-light italic text-dark tracking-tight mb-3">Advantages</h3>
+                <p className="text-dark/60 text-sm leading-relaxed whitespace-pre-line">{product.advantages}</p>
+              </div>
+            )}
+          </motion.div>
+        )}
+
         {/* Recommendations */}
         {recommendations.length > 0 && (
           <motion.div

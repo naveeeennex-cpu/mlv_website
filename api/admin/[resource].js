@@ -71,21 +71,22 @@ async function handleProducts(req, res) {
     return res.status(200).json(rows);
   }
   if (req.method === 'POST') {
-    const { id, category_id, name, code, price, mrp, description, features, specs, finishes, image, bundle_includes, door_material, door_configuration } = req.body;
+    const { id, category_id, name, code, price, mrp, description, features, specs, finishes, image, bundle_includes, door_material, door_configuration, applications, advantages } = req.body;
     if (!id || !name || !price) return res.status(400).json({ error: 'id, name, price required' });
     const { rows } = await db.query(`
-      INSERT INTO products (id,category_id,name,code,price,mrp,description,features,specs,finishes,image,bundle_includes,door_material,door_configuration)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+      INSERT INTO products (id,category_id,name,code,price,mrp,description,features,specs,finishes,image,bundle_includes,door_material,door_configuration,applications,advantages)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
       [id, category_id, name, code || '', price,
        mrp || `₹${Number(price).toLocaleString('en-IN')}`,
        description || '', JSON.stringify(features || []),
        JSON.stringify(specs || {}), JSON.stringify(finishes || []),
        image || '', bundle_includes || null,
-       JSON.stringify(door_material || []), JSON.stringify(door_configuration || [])]);
+       JSON.stringify(door_material || []), JSON.stringify(door_configuration || []),
+       applications || null, advantages || null]);
     return res.status(201).json(rows[0]);
   }
   if (req.method === 'PUT') {
-    const { id, price, mrp, name, code, description, features, specs, finishes, image, bundle_includes, category_id, in_stock, door_material, door_configuration } = req.body;
+    const { id, price, mrp, name, code, description, features, specs, finishes, image, bundle_includes, category_id, in_stock, door_material, door_configuration, applications, advantages } = req.body;
     if (!id) return res.status(400).json({ error: 'id required' });
     const fields = []; const params = [];
     const set = (col, val) => { params.push(val); fields.push(`${col} = $${params.length}`); };
@@ -103,6 +104,8 @@ async function handleProducts(req, res) {
     if (category_id !== undefined) set('category_id', category_id);
     if (door_material !== undefined) set('door_material', JSON.stringify(door_material));
     if (door_configuration !== undefined) set('door_configuration', JSON.stringify(door_configuration));
+    if (applications !== undefined) set('applications', applications);
+    if (advantages !== undefined) set('advantages', advantages);
     if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
     params.push(id);
     const { rows } = await db.query(`UPDATE products SET ${fields.join(', ')} WHERE id = $${params.length} RETURNING *`, params);
@@ -397,6 +400,42 @@ async function handleUpload(req, res) {
   return res.status(200).json({ url: `${supabaseUrl}/storage/v1/object/public/${BUCKET}/${path}` });
 }
 
+async function handleLeads(req, res) {
+  const db = getDb();
+  if (req.method === 'GET') {
+    const { status, source, search } = req.query;
+    let query = 'SELECT * FROM leads';
+    const params = []; const where = [];
+    if (status) { params.push(status); where.push(`status = $${params.length}`); }
+    if (source) { params.push(source); where.push(`lead_source = $${params.length}`); }
+    if (search) { params.push(`%${search}%`); where.push(`(phone ILIKE $${params.length} OR customer_name ILIKE $${params.length} OR product_name ILIKE $${params.length})`); }
+    if (where.length) query += ' WHERE ' + where.join(' AND ');
+    query += ' ORDER BY created_at DESC LIMIT 500';
+    const { rows } = await db.query(query, params);
+    return res.status(200).json(rows);
+  }
+  if (req.method === 'PUT') {
+    const { id, status, customer_name } = req.body || {};
+    if (!id) return res.status(400).json({ error: 'id required' });
+    const fields = []; const params = [];
+    const set = (col, val) => { params.push(val); fields.push(`${col} = $${params.length}`); };
+    if (status !== undefined) set('status', status);
+    if (customer_name !== undefined) set('customer_name', customer_name);
+    if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
+    params.push(id);
+    const { rows } = await db.query(`UPDATE leads SET ${fields.join(', ')} WHERE id = $${params.length} RETURNING *`, params);
+    if (!rows[0]) return res.status(404).json({ error: 'Lead not found' });
+    return res.status(200).json(rows[0]);
+  }
+  if (req.method === 'DELETE') {
+    const { id } = req.query;
+    if (!id) return res.status(400).json({ error: 'id required' });
+    await db.query('DELETE FROM leads WHERE id = $1', [id]);
+    return res.status(200).json({ success: true });
+  }
+  return res.status(405).json({ error: 'Method not allowed' });
+}
+
 // ── router ───────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -418,6 +457,7 @@ export default async function handler(req, res) {
       case 'config':       return await handleConfig(req, res);
       case 'categories':   return await handleCategories(req, res);
       case 'customers':    return await handleCustomers(req, res);
+      case 'leads':        return await handleLeads(req, res);
       case 'send-message': return await handleSendMessage(req, res);
       case 'broadcast':    return await handleBroadcast(req, res);
       case 'cron-config':  return await handleCronConfig(req, res);
