@@ -167,6 +167,7 @@ export default function AdminLeads() {
                   <td className="px-4 py-3 text-gray-700">{l.product_name || '—'}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs">
                     {[l.door_material, l.door_configuration, l.door_location].filter(Boolean).join(' · ') || '—'}
+                    {l.budget && <div className="text-[11px] text-gray-400 mt-0.5">💰 {l.budget}</div>}
                   </td>
                   <td className="px-4 py-3"><StatusCell lead={l} onChange={handleStatus} /></td>
                   <td className="px-4 py-3">
