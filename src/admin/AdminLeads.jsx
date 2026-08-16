@@ -3,10 +3,13 @@ import toast from 'react-hot-toast';
 import { apiFetch } from './useAdmin';
 import { FiSearch, FiX, FiTrash2, FiMessageSquare, FiExternalLink } from 'react-icons/fi';
 
-const STATUSES = ['New Lead', 'Contacted', 'Qualified', 'Won', 'Lost'];
+const STATUSES = ['In Progress', 'New Lead', 'Needs Expert', 'Coming Soon', 'Contacted', 'Qualified', 'Won', 'Lost'];
 
 const STATUS_STYLE = {
+  'In Progress': 'bg-slate-100 text-slate-500 border-slate-200',
   'New Lead': 'bg-blue-50 text-blue-700 border-blue-200',
+  'Needs Expert': 'bg-orange-50 text-orange-700 border-orange-200',
+  'Coming Soon': 'bg-violet-50 text-violet-700 border-violet-200',
   'Contacted': 'bg-amber-50 text-amber-700 border-amber-200',
   'Qualified': 'bg-purple-50 text-purple-700 border-purple-200',
   'Won': 'bg-[#e7f6ec] text-[#1a7a32] border-[#bfe3cb]',
